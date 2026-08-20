@@ -3,7 +3,8 @@
 Two modes: tail CloudWatch for a running AWS Batch job, or fire the podscribe-jobs GitHub Action that builds a test image from a non-master branch.
 
 ```
--logs     pick a RUNNING job, follow logs
+-logs     pick a RUNNING job and print logs
+-follow   with -logs, last 10m then new lines (same as aws logs tail)
 -build    dispatch "Build job image (manual test)" for the job dir you're in
 -marker   substring in the job definition name (logs only)
 -platform linux/arm64 (default) or linux/amd64 (build only)
@@ -25,10 +26,11 @@ Looks at active job definitions whose name contains `-marker`, then lists RUNNIN
 
 ```bash
 jobs_logger -logs
+jobs_logger -logs -follow
 jobs_logger -logs -marker SomeOtherLogin
 ```
 
-Arrow keys, enter. It follows the CloudWatch stream (`/aws/batch/job` unless the container overrides the group) until the job is no longer running.
+Arrow keys, enter. Without `-follow` it dumps the stream from the start, then keeps reading. `-follow` is `aws logs tail --since 10m --follow`: last 10 minutes, then new lines. Stops when the job is no longer running. Log group is `/aws/batch/job` unless the container overrides it.
 
 ![jobs_logger -logs](logs.gif)
 

@@ -28,6 +28,7 @@ type jobRow struct {
 func main() {
 	doBuild := flag.Bool("build", false, "GH manual-test image build from cwd jobs/<dir>")
 	doLogs := flag.Bool("logs", false, "pick a running job and follow CloudWatch logs")
+	doFollow := flag.Bool("follow", false, "with -logs, last 10m then new events")
 	platform := flag.String("platform", "linux/arm64", "build platform: linux/arm64 or linux/amd64")
 	marker := flag.String("marker", "", "job def name substring; default is `gh api user` login")
 	flag.Parse()
@@ -35,6 +36,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "use -build or -logs\n")
 		flag.Usage()
 		os.Exit(2)
+	}
+	if *doFollow && !*doLogs {
+		log.Fatal("-follow requires -logs")
 	}
 
 	ctx := context.Background()
@@ -76,7 +80,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := followLogs(ctx, client, logsClient, jobs[i].id); err != nil {
+	if err := followLogs(ctx, client, logsClient, jobs[i].id, *doFollow); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -202,7 +206,8 @@ func listJobs(ctx context.Context, client *batch.Client, queue, prefix string) (
 	return jobs, nil
 }
 
-func followLogs(ctx context.Context, client *batch.Client, logsClient *cloudwatchlogs.Client, jobID string) error {
+func followLogs(ctx context.Context, client *batch.Client, logsClient *cloudwatchlogs.Client, jobID string, followOnly bool) error {
+	const since = 10 * time.Minute
 	var token *string
 	for {
 		group, stream, running, err := logTarget(ctx, client, jobID)
@@ -217,12 +222,16 @@ func followLogs(ctx context.Context, client *batch.Client, logsClient *cloudwatc
 			continue
 		}
 
-		out, err := logsClient.GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
+		in := &cloudwatchlogs.GetLogEventsInput{
 			LogGroupName:  aws.String(group),
 			LogStreamName: aws.String(stream),
-			StartFromHead: aws.Bool(true),
 			NextToken:     token,
-		})
+			StartFromHead: aws.Bool(true),
+		}
+		if token == nil && followOnly {
+			in.StartTime = aws.Int64(time.Now().Add(-since).UnixMilli())
+		}
+		out, err := logsClient.GetLogEvents(ctx, in)
 		if err != nil {
 			if running && token == nil {
 				time.Sleep(2 * time.Second)
