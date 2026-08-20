@@ -1,0 +1,4 @@
+/jobs_logger
+.env
+.env.*
+.DS_Store
